@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Mic, StopCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useMediaRecorder } from '@/hooks/use-media-recorder';
@@ -42,16 +42,16 @@ export default function VoiceChat() {
         history: conversationHistory,
       });
 
-      const { text, audio, history } = revoltQueryResponse;
+      const { text, history } = revoltQueryResponse;
 
       setTranscribedText(text);
-      setAiResponseText(audio);
+      setAiResponseText(text);
       setConversationHistory(history);
 
-      if (audio) {
+      if (text) {
         const ttsResponse = await fetch('/api/gemini-live/tts', {
           method: 'POST',
-          body: JSON.stringify({ text: audio }),
+          body: JSON.stringify({ text }),
           headers: { 'Content-Type': 'application/json' },
         });
         if (!ttsResponse.ok || !ttsResponse.body) {
@@ -73,7 +73,7 @@ export default function VoiceChat() {
     }
   }, [playAudio, toast, conversationHistory]);
 
-  const { startRecording, stopRecording, isRecording } = useMediaRecorder({
+  const { startRecording, stopRecording } = useMediaRecorder({
     onDataAvailable: handleAudioProcessing,
   });
 
@@ -109,20 +109,22 @@ export default function VoiceChat() {
         case 'error':
             return <p className="text-sm text-destructive">An error occurred. Please try again.</p>;
         default:
-            if (transcribedText) return <p className="text-lg"><span className="font-bold">You said:</span> {transcribedText}</p>
             if (aiResponseText) return <p className="text-lg mt-2"><span className="font-bold">AI:</span> {aiResponseText}</p>
+            if (transcribedText) return <p className="text-lg"><span className="font-bold">You said:</span> {transcribedText}</p>
             return <p className="text-muted-foreground">Press the button and start speaking.</p>;
     }
   }
 
+  const isRecording = status === 'recording';
+
   return (
     <div className="flex flex-col items-center justify-center gap-6 w-full max-w-lg">
       <Button
-        onClick={status === 'recording' ? handleStopRecording : handleStartRecording}
+        onClick={isRecording ? handleStopRecording : handleStartRecording}
         size="icon"
         className={cn(
           'h-24 w-24 rounded-full transition-all duration-300 ease-in-out',
-          status === 'recording' && 'bg-red-500 hover:bg-red-600 animate-pulse',
+          isRecording && 'bg-red-500 hover:bg-red-600 animate-pulse',
           status === 'processing' && 'bg-accent/80 cursor-not-allowed',
           status === 'speaking' && 'bg-blue-500 hover:bg-blue-600',
           status === 'error' && 'bg-destructive/80 hover:bg-destructive'
@@ -134,9 +136,6 @@ export default function VoiceChat() {
       <div className="w-full text-center min-h-[80px] p-4 rounded-lg bg-muted/50 flex items-center justify-center">
         <div>
             {getStatusText()}
-            {aiResponseText && status !== 'processing' && status !== 'speaking' && (
-                <p className="text-lg mt-2"><span className="font-bold">AI:</span> {aiResponseText}</p>
-            )}
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { answerRevoltQueries } from '@/ai/flows/answer-revolt-queries';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -11,32 +11,18 @@ export async function POST(req: Request) {
   }
 
   try {
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      throw new Error('GOOGLE_API_KEY environment variable not set.');
+    const { audio: audioBase64, history } = await req.json();
+
+    if (!audioBase64) {
+      return new Response('Audio data is required.', { status: 400 });
     }
     
-    const audioData = await req.arrayBuffer();
-    const audioBase64 = Buffer.from(audioData).toString('base64');
-    
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const response = await answerRevoltQueries({
+      query: audioBase64,
+      history,
+    });
 
-    const audio = {
-      inlineData: {
-        mimeType: 'audio/webm',
-        data: audioBase64,
-      },
-    };
-    
-    const result = await model.generateContent([
-        "Please transcribe the following audio. If there is no speech, return an empty response.",
-        audio
-    ]);
-    const response = await result.response;
-    const text = response.text();
-
-    return NextResponse.json({ transcript: text });
+    return NextResponse.json(response);
 
   } catch (error) {
     console.error('API route error:', error);

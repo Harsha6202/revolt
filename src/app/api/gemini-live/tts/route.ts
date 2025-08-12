@@ -1,5 +1,5 @@
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -11,31 +11,23 @@ export async function POST(req: Request) {
   }
 
   try {
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      throw new Error('GOOGLE_API_KEY environment variable not set.');
-    }
-    
     const { text } = await req.json();
     if (!text) {
         return new Response('Text for TTS is required.', { status: 400 });
     }
     
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-preview-native-audio-dialog" });
+    const { audio } = await textToSpeech({ text });
 
-    const audioContent = await model.generateContent({
-        text,
-    });
-    
-    if (!audioContent.audio) {
+    if (!audio) {
         return new Response('Failed to generate audio.', { status: 500 });
     }
 
+    const audioBuffer = Buffer.from(audio, 'base64');
+    
     const headers = new Headers();
     headers.set('Content-Type', 'audio/webm');
     
-    return new NextResponse(audioContent.audio, { status: 200, headers });
+    return new NextResponse(audioBuffer, { status: 200, headers });
 
   } catch (error) {
     console.error('API route error:', error);

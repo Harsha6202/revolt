@@ -10,7 +10,6 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {googleAI} from '@genkit-ai/googleai';
 import {z} from 'genkit';
 
 const AnswerRevoltQueriesInputSchema = z.object({
@@ -20,8 +19,7 @@ const AnswerRevoltQueriesInputSchema = z.object({
 export type AnswerRevoltQueriesInput = z.infer<typeof AnswerRevoltQueriesInputSchema>;
 
 const AnswerRevoltQueriesOutputSchema = z.object({
-  text: z.string().describe('The transcribed text of the user query.'),
-  audio: z.string().describe("The AI's audio response."),
+  text: z.string().describe('The transcribed text of the user query and the AI response.'),
   history: z.array(z.string()).describe('The updated conversation history.'),
 });
 export type AnswerRevoltQueriesOutput = z.infer<typeof AnswerRevoltQueriesOutputSchema>;
@@ -37,7 +35,7 @@ const prompt = ai.definePrompt({
   input: {schema: AnswerRevoltQueriesInputSchema},
   output: {schema: AnswerRevoltQueriesOutputSchema},
   system: 'You are an expert on Revolt Motors products and services. Only answer questions related to Revolt Motors. If a question is not about Revolt Motors, politely decline to answer. You will be given a user query as a base64 encoded audio string. First, transcribe the audio. Then, formulate a response. Then, return the transcription, your response, and the updated conversation history.',
-  prompt: 'User audio: {{{query}}}. Conversation history: {{{history}}}',
+  prompt: `Transcribe the user's audio query and provide a helpful response. The user's audio is: {{media url=\'data:audio/webm;base64,{{{query}}}\'}} Conversation history: {{{history}}}`
 });
 
 const answerRevoltQueriesFlow = ai.defineFlow(

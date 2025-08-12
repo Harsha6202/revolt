@@ -1,3 +1,4 @@
+
 'use server';
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash-latest', // Note: Using a stable model, can be switched to 'gemini-2.5-flash-preview-native-audio-dialog' if available and preferred
+      model: 'gemini-1.5-flash-preview-native-audio-dialog',
     });
 
     const dialog = model.beginDialog({
@@ -38,7 +39,6 @@ export async function POST(req: Request) {
     const responseStream = new TransformStream<Uint8Array, Uint8Array>();
     const writer = responseStream.writable.getWriter();
 
-    // Pipe Gemini's response to the client
     (async () => {
       try {
         for await (const chunk of dialog.stream) {
@@ -50,17 +50,16 @@ export async function POST(req: Request) {
         console.error('Gemini stream processing error:', error);
         await writer.abort(error);
       } finally {
-        if (writer.desiredSize !== null) { // Check if writer is still active
+        if (writer.desiredSize !== null) { 
           try {
             await writer.close();
           } catch (e) {
-            // Ignore errors on closing, as the stream might already be closed
+            // Ignore errors on closing
           }
         }
       }
     })();
     
-    // Pipe client's request to Gemini
     (async () => {
         const reader = req.body!.getReader();
         try {
@@ -75,7 +74,7 @@ export async function POST(req: Request) {
             console.error('Client stream reading error:', error);
             await dialog.destroy();
         } finally {
-            // No specific action needed when client stream ends, Gemini handles it.
+            // When the client stream ends, Gemini handles it.
         }
     })();
 

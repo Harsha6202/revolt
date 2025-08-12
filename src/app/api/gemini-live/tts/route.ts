@@ -1,37 +1,27 @@
 
-import { textToSpeech } from '@/ai/flows/text-to-speech';
-import { NextResponse } from 'next/server';
+import { textToSpeechStream } from '@/ai/flows/text-to-speech';
+import { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: Request) {
-  if (!req.body) {
-    return new Response('Request body is required.', { status: 400 });
-  }
-
+export async function POST(req: NextRequest) {
   try {
     const { text } = await req.json();
     if (!text) {
-        return new Response('Text for TTS is required.', { status: 400 });
-    }
-    
-    const { audio } = await textToSpeech({ text });
-
-    if (!audio) {
-        return new Response('Failed to generate audio.', { status: 500 });
+      return new Response('Text for TTS is required.', { status: 400 });
     }
 
-    const audioBuffer = Buffer.from(audio, 'base64');
-    
+    const stream = await textToSpeechStream({ text });
+
     const headers = new Headers();
-    headers.set('Content-Type', 'audio/webm');
-    
-    return new NextResponse(audioBuffer, { status: 200, headers });
+    headers.set('Content-Type', 'audio/webm;codecs=opus');
 
+    return new Response(stream, { status: 200, headers });
   } catch (error) {
     console.error('API route error:', error);
-    const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message =
+      error instanceof Error ? error.message : 'An unknown error occurred.';
+    return new Response(JSON.stringify({ error: message }), { status: 500 });
   }
 }

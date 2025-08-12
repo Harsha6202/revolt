@@ -1,16 +1,14 @@
 
 'use server';
 /**
- * @fileOverview Implements a Genkit flow to convert text to speech.
+ * @fileOverview Implements Genkit flows to convert text to speech.
  *
  * - textToSpeech - A function that handles converting text to speech.
- * - TextToSpeechInput - The input type for the textToSpeech function.
- * - TextToSpeechOutput - The return type for the textToSpeech function.
+ * - textToSpeechStream - A function that handles converting text to speech and streams the response.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import {googleAI} from '@genkit-ai/googleai';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
 
 const TextToSpeechInputSchema = z.object({
   text: z.string().describe('The text to convert to speech.'),
@@ -18,13 +16,24 @@ const TextToSpeechInputSchema = z.object({
 export type TextToSpeechInput = z.infer<typeof TextToSpeechInputSchema>;
 
 const TextToSpeechOutputSchema = z.object({
-  audio: z.string().describe("The base64 encoded audio of the speech."),
+  audio: z
+    .string()
+    .describe('The base64 encoded audio of the speech.'),
 });
-export type TextToSpeechOutput = z.infer<typeof TextToSpeechOutputSchema>;
+export type TextToSpeechOutput = z.infer<
+  typeof TextToSpeechOutputSchema
+>;
 
-
-export async function textToSpeech(input: TextToSpeechInput): Promise<TextToSpeechOutput> {
+export async function textToSpeech(
+  input: TextToSpeechInput
+): Promise<TextToSpeechOutput> {
   return textToSpeechFlow(input);
+}
+
+export async function textToSpeechStream(
+  input: TextToSpeechInput
+): Promise<ReadableStream<Uint8Array>> {
+  return textToSpeechStreamingFlow(input);
 }
 
 const textToSpeechFlow = ai.defineFlow(
@@ -34,16 +43,55 @@ const textToSpeechFlow = ai.defineFlow(
     outputSchema: TextToSpeechOutputSchema,
   },
   async ({ text }) => {
-    const { media } = await ai.generate({
-        model: googleAI.model('gemini-1.5-flash-preview-native-audio'),
-        prompt: text,
+    const { stream, response } = ai.generateStream({
+      model: 'googleai/gemini-1.5-flash-preview-native-audio',
+      prompt: text,
     });
-    
-    if (!media?.url) {
-        throw new Error('Audio generation failed.');
+
+    let audioChunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      const media = chunk.output?.media;
+      if (media?.url) {
+        const base64Audio = media.url.split(',')[1];
+        if (base64Audio) {
+          audioChunks.push(Buffer.from(base64Audio, 'base64'));
+        }
+      }
     }
-    
-    const base64Audio = media.url.split(',')[1];
-    return { audio: base64Audio };
+    await response;
+    const finalAudio = Buffer.concat(audioChunks);
+    return { audio: finalAudio.toString('base64') };
+  }
+);
+
+const textToSpeechStreamingFlow = ai.defineFlow(
+  {
+    name: 'textToSpeechStreamingFlow',
+    inputSchema: TextToSpeechInputSchema,
+    outputSchema: z.any(),
+  },
+  async ({ text }) => {
+    const { stream, response } = ai.generateStream({
+      model: 'googleai/gemini-1.5-flash-preview-native-audio',
+      prompt: text,
+    });
+
+    const nodeStream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for await (const chunk of stream) {
+          const media = chunk.output?.media;
+          if (media?.url) {
+            const base64Audio = media.url.split(',')[1];
+            if (base64Audio) {
+              controller.enqueue(Buffer.from(base64Audio, 'base64'));
+            }
+          }
+        }
+        await response;
+        controller.close();
+      },
+    });
+
+    return nodeStream;
   }
 );

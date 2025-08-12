@@ -66,8 +66,9 @@ export default function VoiceChat() {
         headers: { 'Content-Type': 'audio/webm;codecs=opus' },
         body: requestStream,
         signal: abortControllerRef.current.signal,
+        // @ts-ignore
         duplex: 'half',
-      } as RequestInit);
+      });
 
       if (!response.ok || !response.body) {
         throw new Error(`Server error: ${response.status} ${response.statusText}`);

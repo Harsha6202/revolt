@@ -8,9 +8,25 @@ import { useMediaRecorder } from '@/hooks/use-media-recorder';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { AnswerRevoltQueriesOutput } from '@/ai/flows/answer-revolt-queries';
+import type { AnswerRevoltQueriesOutput } from '@/ai/flows/answer-revolt-queries';
 
 type Status = 'idle' | 'recording' | 'processing' | 'error' | 'speaking';
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (reader.result) {
+        const base64String = (reader.result as string).split(',')[1];
+        resolve(base64String);
+      } else {
+        reject(new Error('Failed to convert blob to base64'));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 export default function VoiceChat() {
   const [status, setStatus] = useState<Status>('idle');
@@ -21,7 +37,10 @@ export default function VoiceChat() {
   const stopPlayerRef = useRef<() => void>(() => {});
 
   const onPlaybackStart = useCallback(() => setStatus('speaking'), []);
-  const onPlaybackEnd = useCallback(() => setStatus('idle'), []);
+  const onPlaybackEnd = useCallback(() => {
+    setStatus('idle');
+    setAiResponseText('');
+  }, []);
 
   const { playStream, isPlaying } = useAudioPlayer({
     onPlaybackStart,
@@ -32,13 +51,15 @@ export default function VoiceChat() {
     async (audioBlob: Blob) => {
       setStatus('processing');
       try {
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'audio.webm');
-        formData.append('history', JSON.stringify(conversationHistory));
+        const audioBase64 = await blobToBase64(audioBlob);
 
         const response = await fetch('/api/gemini-live', {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audio: audioBase64,
+            history: conversationHistory,
+          }),
         });
 
         if (!response.ok) {

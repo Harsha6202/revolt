@@ -48,13 +48,14 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error('Gemini stream processing error:', error);
-        await writer.abort(error);
+        await writer.abort(error).catch(() => {}); // Ignore abort errors
       } finally {
+        // The writer might be locked, so we check before closing.
         if (writer.desiredSize !== null) { 
           try {
             await writer.close();
           } catch (e) {
-            // Ignore errors on closing
+            // Ignore errors on closing, it might already be closed or aborted.
           }
         }
       }
@@ -75,6 +76,12 @@ export async function POST(req: Request) {
             await dialog.destroy();
         } finally {
             // When the client stream ends, Gemini handles it.
+            // We can signal the end of the conversation to Gemini if it's still active.
+            try {
+              await dialog.finish();
+            } catch (e) {
+              // Ignore if dialog is already destroyed or finished.
+            }
         }
     })();
 

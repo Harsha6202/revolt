@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -12,14 +13,18 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const AnswerRevoltQueriesInputSchema = z.object({
-  query: z.string().describe('The question about Revolt Motors.'),
+  query: z.string().describe('The user audio query as a base64 encoded string.'),
+  history: z.array(z.string()).optional().describe('The conversation history.'),
 });
 export type AnswerRevoltQueriesInput = z.infer<typeof AnswerRevoltQueriesInputSchema>;
 
 const AnswerRevoltQueriesOutputSchema = z.object({
-  answer: z.string().describe('The answer to the question about Revolt Motors.'),
+  text: z.string().describe('The transcribed text of the user query.'),
+  audio: z.string().describe("The AI's audio response."),
+  history: z.array(z.string()).describe('The updated conversation history.'),
 });
 export type AnswerRevoltQueriesOutput = z.infer<typeof AnswerRevoltQueriesOutputSchema>;
+
 
 export async function answerRevoltQueries(input: AnswerRevoltQueriesInput): Promise<AnswerRevoltQueriesOutput> {
   return answerRevoltQueriesFlow(input);
@@ -29,8 +34,8 @@ const prompt = ai.definePrompt({
   name: 'answerRevoltQueriesPrompt',
   input: {schema: AnswerRevoltQueriesInputSchema},
   output: {schema: AnswerRevoltQueriesOutputSchema},
-  system: 'You are an expert on Revolt Motors products and services. Only answer questions related to Revolt Motors. If a question is not about Revolt Motors, politely decline to answer.',
-  prompt: '{{{query}}}',
+  system: 'You are an expert on Revolt Motors products and services. Only answer questions related to Revolt Motors. If a question is not about Revolt Motors, politely decline to answer. You will be given a user query as a base64 encoded audio string. First, transcribe the audio. Then, formulate a response. Then, return the transcription, your response, and the updated conversation history.',
+  prompt: 'User audio: {{{query}}}. Conversation history: {{{history}}}',
 });
 
 const answerRevoltQueriesFlow = ai.defineFlow(

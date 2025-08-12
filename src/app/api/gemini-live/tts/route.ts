@@ -18,27 +18,26 @@ export async function POST(req: Request) {
       throw new Error('GOOGLE_API_KEY environment variable not set.');
     }
     
-    const audioData = await req.arrayBuffer();
-    const audioBase64 = Buffer.from(audioData).toString('base64');
+    const { text } = await req.json();
+    if (!text) {
+        return new Response('Text for TTS is required.', { status: 400 });
+    }
     
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-preview-native-audio-dialog" });
 
-    const audio = {
-      inlineData: {
-        mimeType: 'audio/webm',
-        data: audioBase64,
-      },
-    };
+    const audioContent = await model.generateContent({
+        text,
+    });
     
-    const result = await model.generateContent([
-        "Please transcribe the following audio. If there is no speech, return an empty response.",
-        audio
-    ]);
-    const response = await result.response;
-    const text = response.text();
+    if (!audioContent.audio) {
+        return new Response('Failed to generate audio.', { status: 500 });
+    }
 
-    return NextResponse.json({ transcript: text });
+    const headers = new Headers();
+    headers.set('Content-Type', 'audio/webm');
+    
+    return new NextResponse(audioContent.audio, { status: 200, headers });
 
   } catch (error) {
     console.error('API route error:', error);
@@ -46,3 +45,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

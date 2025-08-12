@@ -5,29 +5,39 @@ import { useState, useRef, useCallback } from 'react';
 
 const MimeTypes = [
     'audio/webm;codecs=opus',
+    'audio/webm',
     'audio/ogg;codecs=opus',
     'audio/opus',
-    'audio/webm',
 ];
 
 export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: Blob) => void }) => {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setIsRecording(false);
+    // The onstop event will handle the rest
   }, []);
 
+  const handleStop = useCallback(() => {
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }
+    const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType });
+    onDataAvailable(audioBlob);
+    audioChunksRef.current = [];
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+  }, [onDataAvailable]);
+  
   const startRecording = useCallback(async () => {
-    if (mediaRecorderRef.current) {
+    if (isRecording) {
+      console.warn("Recording is already in progress.");
       return;
     }
 
@@ -40,38 +50,37 @@ export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: 
         throw new Error("No supported MIME type for MediaRecorder");
       }
 
-      const recorder = new MediaRecorder(stream, { mimeType: supportedMimeType, audioBitsPerSecond: 128000 });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType: supportedMimeType });
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          onDataAvailable(event.data);
+          audioChunksRef.current.push(event.data);
         }
       };
 
-      recorder.onstop = () => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        mediaRecorderRef.current = null;
-        setIsRecording(false);
-      };
+      recorder.onstop = handleStop;
       
       recorder.onerror = (event) => {
         console.error("MediaRecorder error:", event);
         stopRecording();
       };
 
-      recorder.start(500); // Collect data in 500ms chunks
+      recorder.start();
       setIsRecording(true);
 
     } catch (err) {
       console.error('Error starting recording:', err);
-      stopRecording();
+      // Clean up in case of error
+      if(streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      setIsRecording(false);
       throw err;
     }
-  }, [onDataAvailable, stopRecording]);
+  }, [isRecording, handleStop, stopRecording]);
 
   return { isRecording, startRecording, stopRecording };
 };

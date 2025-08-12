@@ -38,13 +38,13 @@ export async function POST(req: Request) {
 
     const responseStream = new TransformStream<Uint8Array, Uint8Array>();
     const writer = responseStream.writable.getWriter();
-    const reader = req.body.getReader();
+    const clientStreamReader = req.body.getReader();
 
     // Pipe the client's audio stream to Gemini
     const clientToGeminiPipe = async () => {
       try {
         while (true) {
-          const { done, value } = await reader.read();
+          const { done, value } = await clientStreamReader.read();
           if (done) {
             break;
           }
@@ -52,6 +52,7 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error('Client stream reading error:', error);
+        // Don't close writer here, let geminiToClientPipe handle it
       } finally {
         // Signal to Gemini that the conversation from this side is over.
         try {

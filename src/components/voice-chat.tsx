@@ -18,21 +18,29 @@ export default function VoiceChat() {
   const { toast } = useToast();
   const requestStreamController = useRef<ReadableStreamDefaultController<any> | null>(null);
 
-  const { startPlayer, stopPlayer, addChunk } = useAudioPlayer();
+  const { startPlayer, stopPlayer, addChunk, isPlaying } = useAudioPlayer();
 
   const handleDataAvailable = useCallback((data: Blob) => {
     if (requestStreamController.current) {
-      requestStreamController.current.enqueue(data);
+      try {
+        requestStreamController.current.enqueue(data);
+      } catch (e) {
+        console.error("Error enqueuing data", e);
+      }
     }
   }, []);
   
-  const { startRecording, stopRecording } = useMediaRecorder({ onDataAvailable: handleDataAvailable });
+  const { startRecording, stopRecording, isRecording } = useMediaRecorder({ onDataAvailable: handleDataAvailable });
 
-  const stopConversation = useCallback(() => {
+  const stopConversation = useCallback(async () => {
     setStatus('idle');
     setStatusText('Tap to speak');
-    stopRecording();
-    stopPlayer();
+    if (isRecording) {
+      stopRecording();
+    }
+    if (isPlaying) {
+      stopPlayer();
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -45,7 +53,7 @@ export default function VoiceChat() {
       }
       requestStreamController.current = null;
     }
-  }, [stopRecording, stopPlayer]);
+  }, [stopRecording, stopPlayer, isRecording, isPlaying]);
 
   const startConversation = async () => {
     setStatus('connecting');
@@ -72,7 +80,7 @@ export default function VoiceChat() {
 
       if (!response.ok || !response.body) {
         const errorText = await response.text();
-        throw new Error(`Server error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`Server error: ${response.status} ${response.statusText} - ${errorText || 'No response body'}`);
       }
       
       setStatus('recording');
@@ -83,7 +91,9 @@ export default function VoiceChat() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+            break;
+        };
         addChunk(value);
       }
     } catch (error) {

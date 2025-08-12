@@ -11,8 +11,6 @@ export const useAudioPlayer = () => {
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const chunkQueue = useRef<Uint8Array[]>([]);
-  
-  // This ref helps manage the state of the source buffer update process.
   const isAppendingRef = useRef(false);
 
   const processQueue = useCallback(() => {
@@ -32,10 +30,21 @@ export const useAudioPlayer = () => {
         sourceBufferRef.current.appendBuffer(chunk);
       } catch (e) {
         console.error('Error appending buffer:', e);
+        // if the buffer is full, we can try to remove some old data
+        if (sourceBufferRef.current && sourceBufferRef.current.buffered.length > 0) {
+            try {
+                const removeEnd = sourceBufferRef.current.buffered.start(0) + 10;
+                if(removeEnd < sourceBufferRef.current.buffered.end(0)) {
+                    sourceBufferRef.current.remove(sourceBufferRef.current.buffered.start(0), removeEnd);
+                }
+            } catch(removeError) {
+                console.error("Error trying to clear buffer", removeError)
+            }
+        }
         isAppendingRef.current = false;
       }
     } else {
-        isAppendingRef.current = false;
+      isAppendingRef.current = false;
     }
   }, []);
 
@@ -44,18 +53,45 @@ export const useAudioPlayer = () => {
     processQueue();
   }, [processQueue]);
 
+  const stopPlayer = useCallback(() => {
+    if (audioRef.current) {
+        if (!audioRef.current.paused) {
+            audioRef.current.pause();
+        }
+        audioRef.current.src = '';
+        audioRef.current.load();
+        audioRef.current = null;
+    }
+    if (sourceBufferRef.current) {
+      sourceBufferRef.current.removeEventListener('updateend', onUpdateEnd);
+      sourceBufferRef.current = null;
+    }
+    if (mediaSourceRef.current) {
+      try {
+        if (mediaSourceRef.current.readyState === 'open' && mediaSourceRef.current.sourceBuffers.length > 0) {
+          mediaSourceRef.current.sourceBuffers[0].abort();
+          mediaSourceRef.current.endOfStream();
+        }
+      } catch (e) {
+        console.error("Error ending stream:", e);
+      }
+      mediaSourceRef.current = null;
+    }
+    chunkQueue.current = [];
+    isAppendingRef.current = false;
+    setIsPlaying(false);
+  }, [onUpdateEnd]);
+
   const startPlayer = useCallback(() => {
     return new Promise<void>((resolve, reject) => {
       if (audioRef.current) {
-        resolve();
-        return;
+        stopPlayer();
       }
 
       const audio = new Audio();
       audioRef.current = audio;
       const mediaSource = new MediaSource();
       mediaSourceRef.current = mediaSource;
-      audio.src = URL.createObjectURL(mediaSource);
 
       const onSourceOpen = () => {
         URL.revokeObjectURL(audio.src);
@@ -74,46 +110,22 @@ export const useAudioPlayer = () => {
       };
 
       mediaSource.addEventListener('sourceopen', onSourceOpen);
+      audio.src = URL.createObjectURL(mediaSource);
       
       audio.play().catch(e => {
         console.warn("Autoplay was prevented. User interaction is needed.", e);
-        // We resolve anyway, playback will start when data is added.
         resolve();
       });
       audio.onplaying = () => setIsPlaying(true);
       audio.onpause = () => setIsPlaying(false);
+      audio.onended = () => setIsPlaying(false);
     });
-  }, [onUpdateEnd]);
+  }, [onUpdateEnd, stopPlayer]);
 
   const addChunk = useCallback((chunk: Uint8Array) => {
     chunkQueue.current.push(chunk);
     processQueue();
   }, [processQueue]);
-
-  const stopPlayer = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
-      audioRef.current = null;
-    }
-    if (sourceBufferRef.current) {
-      sourceBufferRef.current.removeEventListener('updateend', onUpdateEnd);
-      sourceBufferRef.current = null;
-    }
-    if (mediaSourceRef.current) {
-      try {
-        if (mediaSourceRef.current.readyState === 'open') {
-          mediaSourceRef.current.endOfStream();
-        }
-      } catch (e) {
-        console.error("Error ending stream:", e);
-      }
-      mediaSourceRef.current = null;
-    }
-    chunkQueue.current = [];
-    isAppendingRef.current = false;
-    setIsPlaying(false);
-  }, [onUpdateEnd]);
 
   return { isPlaying, startPlayer, stopPlayer, addChunk };
 };

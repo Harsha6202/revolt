@@ -5,8 +5,9 @@ import { useState, useRef, useCallback } from 'react';
 
 const MimeTypes = [
     'audio/webm;codecs=opus',
-    'audio/webm',
+    'audio/ogg;codecs=opus',
     'audio/opus',
+    'audio/webm',
 ];
 
 export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: Blob) => void }) => {
@@ -17,20 +18,16 @@ export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      // The 'stop' event will handle cleanup.
     }
-    // also clean up tracks
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    mediaRecorderRef.current = null;
     setIsRecording(false);
   }, []);
 
   const startRecording = useCallback(async () => {
-    if (isRecording) {
-      console.warn("Recording is already in progress.");
+    if (mediaRecorderRef.current) {
       return;
     }
 
@@ -43,7 +40,7 @@ export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: 
         throw new Error("No supported MIME type for MediaRecorder");
       }
 
-      const recorder = new MediaRecorder(stream, { mimeType: supportedMimeType });
+      const recorder = new MediaRecorder(stream, { mimeType: supportedMimeType, audioBitsPerSecond: 128000 });
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
@@ -53,12 +50,17 @@ export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: 
       };
 
       recorder.onstop = () => {
-        // Clean up stream tracks when recording stops
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
         }
+        mediaRecorderRef.current = null;
         setIsRecording(false);
+      };
+      
+      recorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
+        stopRecording();
       };
 
       recorder.start(500); // Collect data in 500ms chunks
@@ -66,11 +68,10 @@ export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: 
 
     } catch (err) {
       console.error('Error starting recording:', err);
-      // Ensure we clean up if start fails
       stopRecording();
       throw err;
     }
-  }, [isRecording, onDataAvailable, stopRecording]);
+  }, [onDataAvailable, stopRecording]);
 
   return { isRecording, startRecording, stopRecording };
 };

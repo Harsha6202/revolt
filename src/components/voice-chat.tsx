@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
@@ -15,15 +16,17 @@ export default function VoiceChat() {
   const [statusText, setStatusText] = useState('Tap to speak');
   const abortControllerRef = useRef<AbortController | null>(null);
   const { toast } = useToast();
+  const requestStreamController = useRef<ReadableStreamDefaultController<any> | null>(null);
 
   const { startPlayer, stopPlayer, addChunk } = useAudioPlayer();
 
-  const handleDataAvailable = useCallback(async (data: Blob) => {
-    // This function will be implemented inside toggleConversation
-    // because it needs access to the request's writable stream.
+  const handleDataAvailable = useCallback((data: Blob) => {
+    if (requestStreamController.current) {
+      requestStreamController.current.enqueue(data);
+    }
   }, []);
   
-  const { startRecording, stopRecording, isRecording } = useMediaRecorder({ onDataAvailable: handleDataAvailable });
+  const { startRecording, stopRecording } = useMediaRecorder({ onDataAvailable: handleDataAvailable });
 
   const stopConversation = useCallback(() => {
     setStatus('idle');
@@ -34,6 +37,14 @@ export default function VoiceChat() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (requestStreamController.current) {
+      try {
+        requestStreamController.current.close();
+      } catch (e) {
+        // Ignore if already closed
+      }
+      requestStreamController.current = null;
+    }
   }, [stopRecording, stopPlayer]);
 
   const startConversation = async () => {
@@ -42,36 +53,18 @@ export default function VoiceChat() {
     abortControllerRef.current = new AbortController();
 
     try {
+      await startRecording();
+
+      const requestStream = new ReadableStream({
+        start(controller) {
+          requestStreamController.current = controller;
+        },
+      });
+
       const response = await fetch('/api/gemini-live', {
         method: 'POST',
-        headers: { 'Content-Type': 'audio/webm' },
-        body: new ReadableStream({
-          async start(controller) {
-            try {
-              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-              const supportedMimeType = ['audio/webm;codecs=opus', 'audio/webm'].find(MediaRecorder.isTypeSupported);
-              if (!supportedMimeType) throw new Error("No supported MIME type for MediaRecorder");
-
-              const recorder = new MediaRecorder(stream, { mimeType: supportedMimeType });
-              recorder.ondataavailable = (e) => {
-                if (e.data.size > 0) controller.enqueue(e.data);
-              };
-
-              abortControllerRef.current?.signal.addEventListener('abort', () => {
-                recorder.stop();
-                stream.getTracks().forEach(t => t.stop());
-                controller.close();
-              });
-
-              recorder.start(500);
-              setStatus('recording');
-              setStatusText('Listening...');
-            } catch (error) {
-              controller.error(error);
-              throw error;
-            }
-          },
-        }),
+        headers: { 'Content-Type': 'audio/webm;codecs=opus' },
+        body: requestStream,
         signal: abortControllerRef.current.signal,
         duplex: 'half',
       } as RequestInit);
@@ -80,6 +73,9 @@ export default function VoiceChat() {
         throw new Error(`Server error: ${response.status} ${response.statusText}`);
       }
       
+      setStatus('recording');
+      setStatusText('Listening...');
+
       await startPlayer();
       const reader = response.body.getReader();
 

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
@@ -40,12 +41,19 @@ export const useMediaRecorder = ({ onDataAvailable }: { onDataAvailable: (data: 
 
     } catch (err) {
       console.error('Error starting recording:', err);
+      // Ensure we clean up if start fails
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      mediaRecorderRef.current = null;
+      setIsRecording(false);
       throw err;
     }
   }, [onDataAvailable]);
 
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
     }

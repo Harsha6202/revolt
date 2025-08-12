@@ -33,7 +33,7 @@ export async function answerRevoltQueries(input: AnswerRevoltQueriesInput): Prom
 
 const prompt = ai.definePrompt({
   name: 'answerRevoltQueriesPrompt',
-  model: googleAI('gemini-1.5-flash'),
+  model: 'googleai/gemini-1.5-flash',
   input: {schema: AnswerRevoltQueriesInputSchema},
   output: {schema: AnswerRevoltQueriesOutputSchema},
   system: 'You are an expert on Revolt Motors products and services. Only answer questions related to Revolt Motors. If a question is not about Revolt Motors, politely decline to answer. You will be given a user query as a base64 encoded audio string. First, transcribe the audio. Then, formulate a response. Then, return the transcription, your response, and the updated conversation history.',

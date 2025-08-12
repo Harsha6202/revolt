@@ -11,62 +11,79 @@ export const useAudioPlayer = () => {
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const chunkQueue = useRef<Uint8Array[]>([]);
-  const onSourceOpenRef = useRef<(() => void) | null>(null);
+  
+  // This ref helps manage the state of the source buffer update process.
+  const isAppendingRef = useRef(false);
 
   const processQueue = useCallback(() => {
     if (
-      chunkQueue.current.length > 0 &&
-      sourceBufferRef.current &&
-      !sourceBufferRef.current.updating
+      isAppendingRef.current ||
+      chunkQueue.current.length === 0 ||
+      !sourceBufferRef.current ||
+      sourceBufferRef.current.updating
     ) {
+      return;
+    }
+
+    isAppendingRef.current = true;
+    const chunk = chunkQueue.current.shift();
+    if (chunk) {
       try {
-        const chunk = chunkQueue.current.shift();
-        if (chunk) {
-          sourceBufferRef.current.appendBuffer(chunk);
-        }
+        sourceBufferRef.current.appendBuffer(chunk);
       } catch (e) {
         console.error('Error appending buffer:', e);
+        isAppendingRef.current = false;
       }
+    } else {
+        isAppendingRef.current = false;
     }
   }, []);
 
+  const onUpdateEnd = useCallback(() => {
+    isAppendingRef.current = false;
+    processQueue();
+  }, [processQueue]);
+
   const startPlayer = useCallback(() => {
     return new Promise<void>((resolve, reject) => {
-        if (audioRef.current) {
-            resolve();
-            return;
+      if (audioRef.current) {
+        resolve();
+        return;
+      }
+
+      const audio = new Audio();
+      audioRef.current = audio;
+      const mediaSource = new MediaSource();
+      mediaSourceRef.current = mediaSource;
+      audio.src = URL.createObjectURL(mediaSource);
+
+      const onSourceOpen = () => {
+        URL.revokeObjectURL(audio.src);
+        mediaSource.removeEventListener('sourceopen', onSourceOpen);
+        if (mediaSource.sourceBuffers.length > 0) return;
+
+        try {
+          const sourceBuffer = mediaSource.addSourceBuffer(MIME_TYPE);
+          sourceBufferRef.current = sourceBuffer;
+          sourceBuffer.addEventListener('updateend', onUpdateEnd);
+          resolve();
+        } catch (e) {
+          console.error('Error adding source buffer:', e);
+          reject(e);
         }
+      };
 
-        const audio = new Audio();
-        audioRef.current = audio;
-
-        const mediaSource = new MediaSource();
-        mediaSourceRef.current = mediaSource;
-        audio.src = URL.createObjectURL(mediaSource);
-
-        onSourceOpenRef.current = () => {
-            if (!mediaSourceRef.current || mediaSourceRef.current.sourceBuffers.length > 0) return;
-            URL.revokeObjectURL(audio.src);
-            try {
-                const sourceBuffer = mediaSource.addSourceBuffer(MIME_TYPE);
-                sourceBufferRef.current = sourceBuffer;
-                sourceBuffer.addEventListener('updateend', processQueue);
-                resolve();
-            } catch (e) {
-                console.error('Error adding source buffer:', e);
-                reject(e);
-            }
-        };
-
-        mediaSource.addEventListener('sourceopen', onSourceOpenRef.current);
-
-        audio.play().catch(e => {
-            console.warn("Autoplay was prevented.", e);
-        });
-        audio.onplaying = () => setIsPlaying(true);
-        audio.onpause = () => setIsPlaying(false);
+      mediaSource.addEventListener('sourceopen', onSourceOpen);
+      
+      audio.play().catch(e => {
+        console.warn("Autoplay was prevented. User interaction is needed.", e);
+        // We resolve anyway, playback will start when data is added.
+        resolve();
+      });
+      audio.onplaying = () => setIsPlaying(true);
+      audio.onpause = () => setIsPlaying(false);
     });
-  }, [processQueue]);
+  }, [onUpdateEnd]);
 
   const addChunk = useCallback((chunk: Uint8Array) => {
     chunkQueue.current.push(chunk);
@@ -79,29 +96,24 @@ export const useAudioPlayer = () => {
       audioRef.current.src = '';
       audioRef.current = null;
     }
-    if (mediaSourceRef.current) {
-        if (onSourceOpenRef.current) {
-            mediaSourceRef.current.removeEventListener('sourceopen', onSourceOpenRef.current);
-            onSourceOpenRef.current = null;
-        }
-        if (mediaSourceRef.current.readyState === 'open' && sourceBufferRef.current) {
-            try { 
-              if (!sourceBufferRef.current.updating) {
-                mediaSourceRef.current.endOfStream(); 
-              }
-            } catch (e) {
-              console.error("Error ending stream:", e);
-            }
-        }
-        mediaSourceRef.current = null;
-    }
     if (sourceBufferRef.current) {
-        sourceBufferRef.current.removeEventListener('updateend', processQueue);
-        sourceBufferRef.current = null;
+      sourceBufferRef.current.removeEventListener('updateend', onUpdateEnd);
+      sourceBufferRef.current = null;
+    }
+    if (mediaSourceRef.current) {
+      try {
+        if (mediaSourceRef.current.readyState === 'open') {
+          mediaSourceRef.current.endOfStream();
+        }
+      } catch (e) {
+        console.error("Error ending stream:", e);
+      }
+      mediaSourceRef.current = null;
     }
     chunkQueue.current = [];
+    isAppendingRef.current = false;
     setIsPlaying(false);
-  }, [processQueue]);
+  }, [onUpdateEnd]);
 
   return { isPlaying, startPlayer, stopPlayer, addChunk };
 };

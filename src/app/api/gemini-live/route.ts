@@ -38,8 +38,35 @@ export async function POST(req: Request) {
 
     const responseStream = new TransformStream<Uint8Array, Uint8Array>();
     const writer = responseStream.writable.getWriter();
+    const reader = req.body.getReader();
 
-    (async () => {
+    // Pipe the client's audio stream to Gemini
+    const clientToGeminiPipe = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          await dialog.send(value);
+        }
+      } catch (error) {
+        console.error('Client stream reading error:', error);
+        await dialog.destroy();
+      } finally {
+        try {
+          // Signal to Gemini that the conversation from this side is over.
+          if (dialog.state === 'ONGOING') {
+             await dialog.finish();
+          }
+        } catch (e) {
+           // Ignore if dialog is already destroyed or finished.
+        }
+      }
+    };
+    
+    // Pipe Gemini's audio stream back to the client
+    const geminiToClientPipe = async () => {
       try {
         for await (const chunk of dialog.stream) {
           if (chunk.audio) {
@@ -48,42 +75,20 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error('Gemini stream processing error:', error);
-        await writer.abort(error).catch(() => {}); // Ignore abort errors
+        await writer.abort(error).catch(() => {});
       } finally {
-        // The writer might be locked, so we check before closing.
-        if (writer.desiredSize !== null) { 
-          try {
-            await writer.close();
-          } catch (e) {
-            // Ignore errors on closing, it might already be closed or aborted.
-          }
+        try {
+          await writer.close();
+        } catch (e) {
+          // Ignore if already closed or aborted.
         }
       }
-    })();
-    
-    (async () => {
-        const reader = req.body!.getReader();
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    break;
-                }
-                await dialog.send(value);
-            }
-        } catch (error) {
-            console.error('Client stream reading error:', error);
-            await dialog.destroy();
-        } finally {
-            // When the client stream ends, Gemini handles it.
-            // We can signal the end of the conversation to Gemini if it's still active.
-            try {
-              await dialog.finish();
-            } catch (e) {
-              // Ignore if dialog is already destroyed or finished.
-            }
-        }
-    })();
+    };
+
+    // Start both pipes concurrently. Do not await them here.
+    clientToGeminiPipe();
+    geminiToClientPipe();
+
 
     return new NextResponse(responseStream.readable, {
       status: 200,

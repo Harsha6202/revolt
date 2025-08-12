@@ -32,19 +32,19 @@
   }
 
   .dark {
-    --background: 0 0% 13%;
+    --background: 0 0% 13%; /* Very Dark Gray */
     --foreground: 0 0% 98%;
     --card: 0 0% 20%;
     --card-foreground: 0 0% 98%;
     --popover: 0 0% 20%;
     --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 20%;
+    --primary: 0 0% 20%; /* Dark Gray */
     --primary-foreground: 0 0% 98%;
     --secondary: 0 0% 25%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 25%;
     --muted-foreground: 0 0% 63.9%;
-    --accent: 182 100% 74%;
+    --accent: 182 100% 74%; /* Electric Blue */
     --accent-foreground: 0 0% 13%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;

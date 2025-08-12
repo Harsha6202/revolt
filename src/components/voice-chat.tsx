@@ -8,7 +8,6 @@ import { useMediaRecorder } from '@/hooks/use-media-recorder';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { answerRevoltQueries } from '@/ai/flows/answer-revolt-queries';
 
 type Status = 'idle' | 'recording' | 'processing' | 'error' | 'speaking';
 
@@ -37,10 +36,18 @@ export default function VoiceChat() {
         reader.readAsDataURL(audioBlob);
       });
 
-      const revoltQueryResponse = await answerRevoltQueries({
-        query: audioBase64,
-        history: conversationHistory,
+      const response = await fetch('/api/gemini-live', {
+        method: 'POST',
+        body: JSON.stringify({ audio: audioBase64, history: conversationHistory }),
+        headers: { 'Content-Type': 'application/json' },
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'API request failed');
+      }
+
+      const revoltQueryResponse = await response.json();
 
       const { text, history } = revoltQueryResponse;
 
@@ -92,7 +99,7 @@ export default function VoiceChat() {
   };
   
   const getButtonIcon = () => {
-    if (status === 'recording') {
+    if (status === 'recording' || status === 'speaking') {
         return <StopCircle className="h-10 w-10" />;
     }
     return <Mic className="h-10 w-10" />;
@@ -117,10 +124,22 @@ export default function VoiceChat() {
 
   const isRecording = status === 'recording';
 
+  const handleButtonClick = () => {
+    if (status === 'recording') {
+      handleStopRecording();
+    } else if (status === 'speaking') {
+      stopPlayer();
+      setStatus('idle');
+    } else {
+      handleStartRecording();
+    }
+  };
+
+
   return (
     <div className="flex flex-col items-center justify-center gap-6 w-full max-w-lg">
       <Button
-        onClick={isRecording ? handleStopRecording : handleStartRecording}
+        onClick={handleButtonClick}
         size="icon"
         className={cn(
           'h-24 w-24 rounded-full transition-all duration-300 ease-in-out',

@@ -66,12 +66,11 @@ export default function VoiceChat() {
         headers: { 'Content-Type': 'audio/webm;codecs=opus' },
         body: requestStream,
         signal: abortControllerRef.current.signal,
-        // @ts-ignore
-        duplex: 'half',
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Server error: ${response.status} ${response.statusText} - ${errorText}`);
       }
       
       setStatus('recording');
@@ -93,7 +92,7 @@ export default function VoiceChat() {
         toast({
             variant: "destructive",
             title: "Error",
-            description: "Could not establish connection with the voice service.",
+            description: (error as Error).message || "Could not establish connection with the voice service.",
         });
       }
     } finally {

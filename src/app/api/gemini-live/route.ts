@@ -52,7 +52,7 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error('Client stream reading error:', error);
-        await dialog.destroy();
+        // Don't destroy here, let geminiToClientPipe finish gracefully if possible
       } finally {
         try {
           // Signal to Gemini that the conversation from this side is over.

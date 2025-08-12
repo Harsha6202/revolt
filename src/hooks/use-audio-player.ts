@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
@@ -10,6 +11,7 @@ export const useAudioPlayer = () => {
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const chunkQueue = useRef<Uint8Array[]>([]);
+  const onSourceOpenRef = useRef<(() => void) | null>(null);
 
   const processQueue = useCallback(() => {
     if (
@@ -17,7 +19,14 @@ export const useAudioPlayer = () => {
       sourceBufferRef.current &&
       !sourceBufferRef.current.updating
     ) {
-      sourceBufferRef.current.appendBuffer(chunkQueue.current.shift()!);
+      try {
+        const chunk = chunkQueue.current.shift();
+        if (chunk) {
+          sourceBufferRef.current.appendBuffer(chunk);
+        }
+      } catch (e) {
+        console.error('Error appending buffer:', e);
+      }
     }
   }, []);
 
@@ -35,9 +44,9 @@ export const useAudioPlayer = () => {
         mediaSourceRef.current = mediaSource;
         audio.src = URL.createObjectURL(mediaSource);
 
-        const onSourceOpen = () => {
+        onSourceOpenRef.current = () => {
             if (!mediaSourceRef.current || mediaSourceRef.current.sourceBuffers.length > 0) return;
-
+            URL.revokeObjectURL(audio.src);
             try {
                 const sourceBuffer = mediaSource.addSourceBuffer(MIME_TYPE);
                 sourceBufferRef.current = sourceBuffer;
@@ -49,12 +58,10 @@ export const useAudioPlayer = () => {
             }
         };
 
-        mediaSource.addEventListener('sourceopen', onSourceOpen);
+        mediaSource.addEventListener('sourceopen', onSourceOpenRef.current);
 
         audio.play().catch(e => {
             console.warn("Autoplay was prevented.", e);
-            // On some browsers, we need a user interaction to start playing.
-            // This is generally fine as the user will have clicked a button.
         });
         audio.onplaying = () => setIsPlaying(true);
         audio.onpause = () => setIsPlaying(false);
@@ -69,18 +76,29 @@ export const useAudioPlayer = () => {
   const stopPlayer = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
-      if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
-         // This can sometimes throw an error if the source is not active
-        try { mediaSourceRef.current.endOfStream(); } catch (e) {}
-      }
       audioRef.current.src = '';
       audioRef.current = null;
+    }
+    if (mediaSourceRef.current) {
+        if (onSourceOpenRef.current) {
+            mediaSourceRef.current.removeEventListener('sourceopen', onSourceOpenRef.current);
+            onSourceOpenRef.current = null;
+        }
+        if (mediaSourceRef.current.readyState === 'open' && sourceBufferRef.current) {
+            try { 
+              if (!sourceBufferRef.current.updating) {
+                mediaSourceRef.current.endOfStream(); 
+              }
+            } catch (e) {
+              console.error("Error ending stream:", e);
+            }
+        }
+        mediaSourceRef.current = null;
     }
     if (sourceBufferRef.current) {
         sourceBufferRef.current.removeEventListener('updateend', processQueue);
         sourceBufferRef.current = null;
     }
-    mediaSourceRef.current = null;
     chunkQueue.current = [];
     setIsPlaying(false);
   }, [processQueue]);

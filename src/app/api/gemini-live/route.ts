@@ -40,7 +40,6 @@ export async function POST(req: Request) {
     const writer = responseStream.writable.getWriter();
     const clientStreamReader = req.body.getReader();
 
-    // Pipe the client's audio stream to Gemini
     const clientToGeminiPipe = async () => {
       try {
         while (true) {
@@ -52,20 +51,19 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error('Client stream reading error:', error);
-        // Don't close writer here, let geminiToClientPipe handle it
       } finally {
-        // Signal to Gemini that the conversation from this side is over.
         try {
+          // Finish the conversation from the client side
           if (dialog.state === 'ONGOING') {
              await dialog.finish();
           }
         } catch (e) {
            // Ignore if dialog is already destroyed or finished.
+           console.warn("Error finishing dialog, it might already be closed.", e)
         }
       }
     };
     
-    // Pipe Gemini's audio stream back to the client
     const geminiToClientPipe = async () => {
       try {
         for await (const chunk of dialog.stream) {
@@ -75,7 +73,7 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error('Gemini stream processing error:', error);
-        await writer.abort(error).catch(() => {});
+        await writer.abort(error).catch(() => {}); // Abort the writable stream on error
       } finally {
         try {
           await writer.close();
@@ -85,10 +83,12 @@ export async function POST(req: Request) {
       }
     };
 
-    // Start both pipes concurrently. Do not await them here.
-    clientToGeminiPipe();
-    geminiToClientPipe();
-
+    // Do not await clientToGeminiPipe here, let it run in the background.
+    // geminiToClientPipe will resolve when the Gemini stream ends.
+    // By having them in a Promise.all, we can better handle teardown.
+    Promise.all([clientToGeminiPipe(), geminiToClientPipe()]).catch(e => {
+      console.error("Error in streaming pipes:", e);
+    });
 
     return new NextResponse(responseStream.readable, {
       status: 200,

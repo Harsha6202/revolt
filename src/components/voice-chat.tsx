@@ -65,6 +65,8 @@ export default function VoiceChat() {
         method: 'POST',
         headers: { 'Content-Type': 'audio/webm;codecs=opus' },
         body: requestStream,
+        // @ts-ignore
+        duplex: 'half',
         signal: abortControllerRef.current.signal,
       });
 

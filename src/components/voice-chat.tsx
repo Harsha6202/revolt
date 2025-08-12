@@ -12,15 +12,14 @@ import type { AnswerRevoltQueriesOutput } from '@/ai/flows/answer-revolt-queries
 
 type Status = 'idle' | 'recording' | 'processing' | 'error' | 'speaking';
 
-function blobToBase64(blob: Blob): Promise<string> {
+function blobToDataURI(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
       if (reader.result) {
-        const base64String = (reader.result as string).split(',')[1];
-        resolve(base64String);
+        resolve(reader.result as string);
       } else {
-        reject(new Error('Failed to convert blob to base64'));
+        reject(new Error('Failed to convert blob to data URI'));
       }
     };
     reader.onerror = reject;
@@ -51,13 +50,13 @@ export default function VoiceChat() {
     async (audioBlob: Blob) => {
       setStatus('processing');
       try {
-        const audioBase64 = await blobToBase64(audioBlob);
+        const audioDataUri = await blobToDataURI(audioBlob);
 
         const response = await fetch('/api/gemini-live', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            audio: audioBase64,
+            query: audioDataUri,
             history: conversationHistory,
           }),
         });

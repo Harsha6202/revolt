@@ -3,17 +3,26 @@
 
 import { useState, useRef, useCallback } from 'react';
 
-export const useAudioPlayer = () => {
+type UseAudioPlayerProps = {
+  onPlaybackStart?: () => void;
+  onPlaybackEnd?: () => void;
+};
+
+export const useAudioPlayer = ({ onPlaybackStart, onPlaybackEnd }: UseAudioPlayerProps = {}) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const stopPlayer = useCallback(() => {
-    if (audioRef.current && !audioRef.current.paused) {
+    if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+      audioRef.current.src = ''; 
+      audioRef.current = null;
+      if (isPlaying) {
+        setIsPlaying(false);
+        onPlaybackEnd?.();
+      }
     }
-    setIsPlaying(false);
-  }, []);
+  }, [isPlaying, onPlaybackEnd]);
 
   const playAudio = useCallback(async (blob: Blob) => {
     stopPlayer();
@@ -23,25 +32,31 @@ export const useAudioPlayer = () => {
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
 
-      audio.onplaying = () => setIsPlaying(true);
+      audio.onplaying = () => {
+        setIsPlaying(true);
+        onPlaybackStart?.();
+      };
       audio.onended = () => {
         setIsPlaying(false);
         URL.revokeObjectURL(audioUrl);
+        onPlaybackEnd?.();
         resolve();
       };
       audio.onerror = (e) => {
         setIsPlaying(false);
         URL.revokeObjectURL(audioUrl);
         console.error("Audio playback error", e);
+        onPlaybackEnd?.();
         reject(new Error("Failed to play audio."));
       };
 
       audio.play().catch(err => {
         console.error("Error attempting to play audio:", err);
+        onPlaybackEnd?.();
         reject(err);
       });
     });
-  }, [stopPlayer]);
+  }, [stopPlayer, onPlaybackStart, onPlaybackEnd]);
 
   return { isPlaying, playAudio, stopPlayer };
 };

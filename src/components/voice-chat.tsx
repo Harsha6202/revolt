@@ -50,15 +50,13 @@ export default function VoiceChat() {
     async (audioBlob: Blob) => {
       setStatus('processing');
       try {
-        const audioDataUri = await blobToDataURI(audioBlob);
+        const formData = new FormData();
+        formData.append('audio', audioBlob);
+        formData.append('history', JSON.stringify(conversationHistory));
 
         const response = await fetch('/api/gemini-live', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: audioDataUri,
-            history: conversationHistory,
-          }),
+          body: formData,
         });
 
         if (!response.ok) {

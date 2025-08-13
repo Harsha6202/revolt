@@ -9,6 +9,34 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { ChatSession } from '@google/generative-ai';
+
+// Types for Gemini AI responses
+interface GenerationConfig {
+  temperature?: number;
+  maxOutputTokens?: number;
+  topK?: number;
+  topP?: number;
+  stopSequences?: string[];
+}
+
+interface TTSResponse {
+  media?: {
+    url: string;
+  };
+}
+
+// Helper function to create a chat session with TTS support
+const createTTSChat = async (text: string) => {
+  const model = ai.getModel('gemini-1.5-flash-preview-native-audio');
+  const chat = model.startChat({
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 2048,
+    },
+  });
+  return chat;
+};
 
 const TextToSpeechInputSchema = z.object({
   text: z.string().describe('The text to convert to speech.'),
@@ -43,24 +71,18 @@ const textToSpeechFlow = ai.defineFlow(
     outputSchema: TextToSpeechOutputSchema,
   },
   async ({ text }) => {
-    const { stream, response } = ai.generateStream({
-      model: 'googleai/gemini-1.5-flash-preview-native-audio',
-      prompt: text,
-    });
-
-    let audioChunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      const media = chunk.output?.media;
-      if (media?.url) {
-        const base64Audio = media.url.split(',')[1];
-        if (base64Audio) {
-          audioChunks.push(Buffer.from(base64Audio, 'base64'));
-        }
+    const chat = await createTTSChat(text);
+    const response = await chat.sendMessage(text);
+    const result = response.response as TTSResponse;
+    
+    if (result.media?.url) {
+      const base64Audio = result.media.url.split(',')[1];
+      if (base64Audio) {
+        return { audio: base64Audio };
       }
     }
-    await response;
-    const finalAudio = Buffer.concat(audioChunks);
-    return { audio: finalAudio.toString('base64') };
+    
+    throw new Error('No audio generated');
   }
 );
 
@@ -71,24 +93,34 @@ const textToSpeechStreamingFlow = ai.defineFlow(
     outputSchema: z.any(),
   },
   async ({ text }) => {
-    const { stream, response } = ai.generateStream({
-      model: 'googleai/gemini-1.5-flash-preview-native-audio',
-      prompt: text,
-    });
+    const chat = await createTTSChat(text);
+    const response = chat.sendMessageStream(text);
+    let stopped = false;
 
     const nodeStream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        for await (const chunk of stream) {
-          const media = chunk.output?.media;
-          if (media?.url) {
-            const base64Audio = media.url.split(',')[1];
-            if (base64Audio) {
-              controller.enqueue(Buffer.from(base64Audio, 'base64'));
+        try {
+          for await (const chunk of response) {
+            if (stopped) {
+              break;
+            }
+            const result = chunk.response as TTSResponse;
+            if (result.media?.url) {
+              const base64Audio = result.media.url.split(',')[1];
+              if (base64Audio) {
+                controller.enqueue(Buffer.from(base64Audio, 'base64'));
+              }
             }
           }
+        } catch (error) {
+          console.error('Stream error:', error);
+        } finally {
+          controller.close();
         }
-        await response;
-        controller.close();
+      },
+      cancel() {
+        stopped = true;
+        // No need for explicit abort as the stream will be cleaned up
       },
     });
 

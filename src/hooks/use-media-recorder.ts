@@ -47,9 +47,23 @@ export const useMediaRecorder = ({
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop();
+      try {
+        mediaRecorderRef.current.stop();
+        return true;
+      } catch (err) {
+        console.error('Error stopping recording:', err);
+        // Force cleanup if stop fails
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
+        setIsRecording(false);
+        onError?.(err as Error);
+        return false;
+      }
     }
-  }, []);
+    return false;
+  }, [onError]);
 
   const startRecording = useCallback(async () => {
     if (isRecording) {

@@ -11,11 +11,19 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { audio: audioBase64, history } = await req.json();
+    const formData = await req.formData();
+    const audioBlob = formData.get('audio') as Blob;
+    const history = formData.get('history') ? JSON.parse(formData.get('history') as string) : [];
 
-    if (!audioBase64) {
+    if (!audioBlob) {
       return new Response('Audio data is required.', { status: 400 });
     }
+
+    // Convert Blob to base64
+    const buffer = await audioBlob.arrayBuffer();
+    const base64Audio = Buffer.from(buffer).toString('base64');
+    const mimeType = audioBlob.type || 'audio/webm;codecs=opus';
+    const audioBase64 = `data:${mimeType};base64,${base64Audio}`;
     
     const response = await answerRevoltQueries({
       query: audioBase64,
